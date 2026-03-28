@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: ethiopia-news-watch
+    runtime: node
+    region: oregon
+    plan: starter
+    numInstances: 1
+    autoDeployTrigger: commit
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NEWS_WATCH_CACHE_DIR
+        value: /var/data/ethiopia-news-watch
+    disk:
+      name: news-watch-cache
+      mountPath: /var/data
+      sizeGB: 5
