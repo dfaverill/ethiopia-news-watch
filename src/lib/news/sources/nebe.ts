@@ -6,7 +6,13 @@ import {
   buildNormalizedItem,
   finalizeSourceResult,
 } from "@/lib/news/sources/helpers";
-import { extractEnglishDate, firstSentence, toAbsoluteUrl } from "@/lib/news/text";
+import { extractStoryImageUrlFromHtml } from "@/lib/news/story-images";
+import {
+  extractEnglishDate,
+  extractLeadingDayMonthDate,
+  firstSentence,
+  toAbsoluteUrl,
+} from "@/lib/news/text";
 import type { SourceAdapter } from "@/lib/news/types";
 
 function extractArchiveLinks(html: string): string[] {
@@ -42,6 +48,7 @@ export const nebeAdapter: SourceAdapter = {
           const $ = load(detailHtml);
           const title =
             $("h1").first().text().trim() || $("title").text().trim();
+          const articleText = $("article").text().replace(/\s+/g, " ").trim();
           const firstParagraph =
             $("article p").first().text().trim() ||
             $(".field--name-body p").first().text().trim() ||
@@ -51,10 +58,13 @@ export const nebeAdapter: SourceAdapter = {
             source: "NEBE",
             title,
             url,
+            imageUrl: extractStoryImageUrlFromHtml(url, detailHtml),
             publishedAt:
+              extractLeadingDayMonthDate(articleText, attemptedAt) ??
               extractEnglishDate(firstParagraph) ??
               extractEnglishDate(detailHtml) ??
               attemptedAt,
+            attemptedAt,
             snippet: firstSentence(firstParagraph || title),
             section: "Election",
             language: "English",

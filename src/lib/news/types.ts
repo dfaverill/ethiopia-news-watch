@@ -18,10 +18,12 @@ export interface NormalizedNewsItem {
   source: SourceName;
   title: string;
   url: string | null;
+  imageUrl?: string | null;
   publishedAt: string;
   snippet: string;
   section: string;
   language: LanguageLabel;
+  originalLanguage?: LanguageLabel | null;
   sourceType: SourceSurfaceType;
   matchedKeywords: string[];
   topicTags: TopicName[];

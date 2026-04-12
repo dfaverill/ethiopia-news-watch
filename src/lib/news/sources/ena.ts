@@ -6,6 +6,7 @@ import {
   buildNormalizedItem,
   finalizeSourceResult,
 } from "@/lib/news/sources/helpers";
+import { extractStoryImageUrlFromHtml } from "@/lib/news/story-images";
 import { extractEnglishDate, firstSentence, toAbsoluteUrl } from "@/lib/news/text";
 import type { SourceAdapter } from "@/lib/news/types";
 
@@ -63,8 +64,10 @@ export const enaAdapter: SourceAdapter = {
                 .attr("content")
                 ?.replace(/\s+-\s+ENA.*$/i, "") ?? candidate.title,
             url: candidate.url,
+            imageUrl: extractStoryImageUrlFromHtml(candidate.url, detailHtml),
             publishedAt:
               extractEnglishDate(description) ?? attemptedAt,
+            attemptedAt,
             snippet: firstSentence(description),
             section: "News",
             language: "English",

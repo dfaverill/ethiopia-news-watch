@@ -1,5 +1,6 @@
 import {
   EMPTY_DASHBOARD_PAYLOAD,
+  normalizeDashboardPayload,
   type CacheSource,
   type DashboardPayload,
   type RefreshMeta,
@@ -22,6 +23,7 @@ import {
   buildSourceFailureResult,
   withCachedSourceResult,
 } from "@/lib/news/sources/helpers";
+import { buildWeeklyBrief, getReusableWeeklyBrief } from "@/lib/news/weekly-brief";
 import type {
   PersistedCoverageState,
   SourceAdapter,
@@ -32,15 +34,48 @@ let inMemoryState: PersistedCoverageState | null = null;
 let inMemoryLoaded = false;
 let inMemoryStateOrigin: CacheSource = "memory";
 let inFlightPayload: Promise<DashboardPayload> | null = null;
+const MAX_PUBLICATION_FUTURE_SKEW_MS = 3 * 60 * 60 * 1000;
 
-function getLatestArticleTimestamp(sourceResults: SourceFetchResult[]) {
-  const latestTimestamp = sourceResults
-    .flatMap((result) => result.items)
-    .map((item) => new Date(item.publishedAt).getTime())
-    .filter((value) => Number.isFinite(value) && value > 0)
+function getLatestPublicationMeta(
+  sourceResults: SourceFetchResult[],
+  attemptedAt: string,
+) {
+  const attemptedTimestamp = new Date(attemptedAt).getTime();
+  const latestCandidates = sourceResults
+    .flatMap((result) =>
+      result.items.map((item) => ({
+        source: item.source,
+        timestamp: new Date(item.publishedAt).getTime(),
+      })),
+    )
+    .filter(
+      (candidate) =>
+        Number.isFinite(candidate.timestamp) &&
+        candidate.timestamp > 0 &&
+        candidate.timestamp <= attemptedTimestamp + MAX_PUBLICATION_FUTURE_SKEW_MS,
+    );
+
+  if (latestCandidates.length === 0) {
+    return {
+      publishedAt: null,
+      sources: [],
+    };
+  }
+
+  const latestTimestamp = latestCandidates
+    .map((candidate) => candidate.timestamp)
     .sort((left, right) => right - left)[0];
 
-  return latestTimestamp ? new Date(latestTimestamp).toISOString() : null;
+  const sources = [...new Set(
+    latestCandidates
+      .filter((candidate) => candidate.timestamp === latestTimestamp)
+      .map((candidate) => candidate.source),
+  )];
+
+  return {
+    publishedAt: new Date(latestTimestamp).toISOString(),
+    sources,
+  };
 }
 
 function computeStaleMinutes(reference: string | null) {
@@ -82,31 +117,60 @@ function withDeliveryMetadata(
   cachedAt: string | null,
   message?: string | null,
 ): DashboardPayload {
+  const normalizedPayload = normalizeDashboardPayload(payload);
+
   return {
-    ...payload,
+    ...normalizedPayload,
     refresh: {
-      ...payload.refresh,
+      ...normalizedPayload.refresh,
       cacheSource,
       cachedAt,
-      staleMinutes: computeStaleMinutes(payload.refresh.successfulAt),
-      message: message ?? payload.refresh.message,
+      staleMinutes: computeStaleMinutes(normalizedPayload.refresh.successfulAt),
+      message: message ?? normalizedPayload.refresh.message,
     },
   };
 }
 
-function buildPayloadFromSourceResults(
+async function buildPayloadFromSourceResults(
   sourceResults: SourceFetchResult[],
   refresh: RefreshMeta,
-): DashboardPayload {
+  previousState: PersistedCoverageState | null,
+): Promise<DashboardPayload> {
   const normalizedItems = dedupeItems(sourceResults.flatMap((result) => result.items));
+  const briefSourceCount = new Set(normalizedItems.map((item) => item.source)).size;
+  const briefStorylineCount = new Set(normalizedItems.map((item) => item.title)).size;
   const storylines = groupStorylines(normalizedItems, sourceResults);
   const latestBySource = buildLatestBySource(sourceResults);
   const sourceStatus = buildSourceStatuses(sourceResults);
-  const lastUpdated = getLatestArticleTimestamp(sourceResults) ?? refresh.successfulAt;
+  const latestPublication = getLatestPublicationMeta(
+    sourceResults,
+    refresh.attemptedAt,
+  );
+  const lastUpdated = latestPublication.publishedAt ?? refresh.successfulAt;
+  const reusableWeeklyBrief = getReusableWeeklyBrief(
+    previousState ? normalizeDashboardPayload(previousState.payload).weeklyBrief : null,
+    refresh.attemptedAt,
+    {
+      latestContentAt: latestPublication.publishedAt,
+      sourceCount: briefSourceCount,
+      storylineCount: briefStorylineCount,
+    },
+  );
+  const weeklyBrief =
+    reusableWeeklyBrief ?? (await buildWeeklyBrief(normalizedItems, refresh.attemptedAt));
+
+  if (reusableWeeklyBrief) {
+    logNewsEvent("info", "weekly_brief_reused", {
+      generatedAt: reusableWeeklyBrief.generatedAt,
+      attemptedAt: refresh.attemptedAt,
+    });
+  }
 
   return {
     generatedAt: refresh.attemptedAt,
     lastUpdated,
+    latestPublication,
+    weeklyBrief,
     storylines,
     latestBySource,
     sourceStatus,
@@ -133,11 +197,13 @@ function buildPreviousPayloadFallback(
   attemptedAt: string,
   message: string,
 ): DashboardPayload {
+  const previousPayload = normalizeDashboardPayload(previousState.payload);
+
   return {
-    ...previousState.payload,
+    ...previousPayload,
     generatedAt: attemptedAt,
     refresh: {
-      ...previousState.payload.refresh,
+      ...previousPayload.refresh,
       attemptedAt,
       mode: "cached",
       cacheSource: "persisted-fallback",
@@ -284,7 +350,11 @@ async function refreshLiveState(
           : null,
   };
 
-  const payload = buildPayloadFromSourceResults(mergedSourceResults, refresh);
+  const payload = await buildPayloadFromSourceResults(
+    mergedSourceResults,
+    refresh,
+    previousState,
+  );
   const state: PersistedCoverageState = {
     schemaVersion: PERSISTED_CACHE_SCHEMA_VERSION,
     cachedAt: attemptedAt,

@@ -8,6 +8,7 @@ import {
 } from "@/lib/news/constants";
 
 const keywordPatternCache = new Map<string, RegExp>();
+const ETHIOPIC_SCRIPT_PATTERN = /[\u1200-\u137F]/u;
 
 function escapeRegex(input: string) {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -28,6 +29,10 @@ function getKeywordPattern(keyword: string) {
 }
 
 function includesKeyword(text: string, keyword: string): boolean {
+  if (ETHIOPIC_SCRIPT_PATTERN.test(keyword)) {
+    return text.includes(keyword);
+  }
+
   return getKeywordPattern(keyword).test(text);
 }
 

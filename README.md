@@ -1,6 +1,6 @@
 # Ethiopia News Watch
 
-Ethiopia News Watch is a comparison-first dashboard for Ethiopia breaking news and politics. It keeps the approved Reuters-like UI, but now runs on a hardened server-side aggregation pipeline with per-source failure isolation, persistent local cache state, structured diagnostics, and focused tests.
+Ethiopia News Watch is a comparison-first dashboard for Ethiopia breaking news and politics. It keeps the approved clean editorial UI, but now runs on a hardened server-side aggregation pipeline with per-source failure isolation, persistent local cache state, structured diagnostics, and focused tests.
 
 ## Purpose
 
@@ -18,6 +18,7 @@ The app is built to answer one practical question quickly:
 - Tailwind CSS
 - `cheerio`
 - `rss-parser`
+- `openai`
 - `vitest`
 
 ## Architecture Overview
@@ -90,9 +91,6 @@ Normalized items keep only the minimum needed:
 
 ## Source Handling By Source
 
-- Reuters
-  - Uses official Reuters outbound news sitemap pages first.
-  - Falls back to Google News RSS scoped to Reuters when official coverage is unavailable or insufficient.
 - Addis Standard
   - Direct RSS/listing/API requests are bot-protected in this environment.
   - Uses Google News RSS fallback and is marked `Fallback` when successful.
@@ -119,7 +117,44 @@ Normalized items keep only the minimum needed:
 5. Failed sources can reuse their previous persisted source snapshot when available.
 6. Relevance scoring filters items to Ethiopia-related coverage.
 7. Deduping and grouping produce storyline comparison cards.
-8. The dashboard refresh button calls `POST /api/coverage`.
+8. An optional server-side AI weekly brief is generated from the already-normalized Ethiopia coverage.
+9. The dashboard refresh button calls `POST /api/coverage`.
+
+## AI Weekly Brief
+
+The dashboard can render an AI-generated “This Week in Ethiopia” summary near the top of the page.
+
+How it works:
+
+- It does not let the model browse the web on its own.
+- It summarizes the same normalized Ethiopia coverage that the app has already collected.
+- It focuses on roughly the last 7 days of available items.
+- It returns:
+  - a headline
+  - a short overview paragraph
+  - key developments
+  - source differences
+  - what to watch next
+
+Required environment variable:
+
+- `OPENAI_API_KEY`
+
+Optional environment variable:
+
+- `OPENAI_SUMMARY_MODEL`
+  - Recommended starting value: `gpt-5.4-mini`
+
+Behavior:
+
+- If `OPENAI_API_KEY` is missing, the app stays fully usable and shows an AI-unavailable note instead of failing.
+- The AI brief is generated server-side and rides along with the normal cached dashboard payload.
+- The summary is refreshed together with the main coverage refresh flow.
+
+Cost note:
+
+- No cost is incurred just by having the code in the repo.
+- API cost only starts when `OPENAI_API_KEY` is configured and the summary endpoint actually runs.
 
 ## Caching And Persistence
 
@@ -313,8 +348,6 @@ Known production caveats:
 
 - Addis Standard
   - Bot protection blocks direct server-side feed/listing access here.
-- Reuters
-  - Official page scraping is brittle; sitemap plus fallback is the practical approach.
 - VOA Amharic
   - Coverage quality depends on the feed mix inside the Ethiopia/Eritrea RSS stream.
 

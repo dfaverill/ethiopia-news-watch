@@ -1,11 +1,12 @@
 interface StatusPillProps {
   label: string;
   tone?: "neutral" | "success" | "warning" | "danger";
+  className?: string;
 }
 
 const toneClasses: Record<NonNullable<StatusPillProps["tone"]>, string> = {
   neutral:
-    "border-[color:var(--line)] bg-white/70 text-[color:var(--ink-soft)]",
+    "border-[color:var(--line)] bg-[color:var(--card-elevated)] text-[color:var(--ink-soft)]",
   success:
     "border-emerald-200 bg-emerald-50 text-emerald-700",
   warning:
@@ -16,10 +17,11 @@ const toneClasses: Record<NonNullable<StatusPillProps["tone"]>, string> = {
 export function StatusPill({
   label,
   tone = "neutral",
+  className = "",
 }: StatusPillProps) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${toneClasses[tone]}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${toneClasses[tone]} ${className}`}
     >
       {label}
     </span>

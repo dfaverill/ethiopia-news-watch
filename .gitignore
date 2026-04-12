@@ -33,6 +33,13 @@ yarn-error.log*
 .pnpm-debug.log*
 .codex-dev*.log
 .codex-render*.log
+.codex-next-dev*.log
+.codex-open-*
+.codex-story-verify.*
+.codex-source-dropdown-check.png
+.tmp-*
+tmp-layout-check.png
+.tmp-edge-headless/
 
 # env files (can opt-in for committing if needed)
 .env*

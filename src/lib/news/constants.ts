@@ -4,7 +4,8 @@ export const REQUEST_TIMEOUT_MS = 18_000;
 export const REQUEST_RETRY_COUNT = 1;
 export const REQUEST_RETRY_DELAY_MS = 1_200;
 export const CACHE_TTL_MS = 10 * 60 * 1000;
-export const PERSISTED_CACHE_SCHEMA_VERSION = 1;
+export const RECENT_NEWS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const PERSISTED_CACHE_SCHEMA_VERSION = 3;
 export const MAX_ITEMS_PER_SOURCE = 10;
 export const API_READ_RATE_LIMIT = 90;
 export const API_READ_RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -15,20 +16,31 @@ export const FORCE_REFRESH_COOLDOWN_MS = 45 * 1000;
 export const KEYWORD_WEIGHTS: Record<string, number> = {
   ethiopia: 9,
   ethiopian: 9,
+  "ኢትዮጵያ": 9,
+  "ኢትዮጵያውያን": 8,
+  "ኢትዮጵያና": 8,
   "addis ababa": 8,
   addis: 4,
+  "አዲስ አበባ": 8,
   abiy: 7,
   tigray: 7,
+  "ትግራይ": 7,
   amhara: 7,
+  "አማራ": 7,
   oromia: 7,
+  "ኦሮሚያ": 7,
   nebe: 9,
   election: 7,
   elections: 7,
+  "ምርጫ": 7,
+  "ምርጫዎች": 7,
   parliament: 5,
   federal: 4,
   regional: 3,
   eritrea: 6,
+  "ኤርትራ": 6,
   sudan: 4,
+  "ሱዳን": 4,
   "sudan border": 7,
   "peace talks": 6,
   insurgency: 6,
@@ -38,7 +50,10 @@ export const KEYWORD_WEIGHTS: Record<string, number> = {
   "ruling party": 6,
   opposition: 5,
   dialogue: 4,
+  "ውይይት": 4,
   mekelle: 6,
+  "መቐለ": 6,
+  "መቀሌ": 6,
   somaliland: 5,
   border: 3,
   voter: 4,
@@ -52,14 +67,24 @@ export const KEYWORD_WEIGHTS: Record<string, number> = {
 export const ETHIOPIA_ANCHOR_KEYWORDS = new Set([
   "ethiopia",
   "ethiopian",
+  "ኢትዮጵያ",
+  "ኢትዮጵያውያን",
+  "ኢትዮጵያና",
   "addis ababa",
+  "አዲስ አበባ",
   "abiy",
   "tigray",
+  "ትግራይ",
   "amhara",
+  "አማራ",
   "oromia",
+  "ኦሮሚያ",
   "nebe",
   "mekelle",
+  "መቐለ",
+  "መቀሌ",
   "eritrea",
+  "ኤርትራ",
   "somaliland",
   "sudan border",
 ]);
@@ -88,6 +113,8 @@ export const TOPIC_KEYWORDS: Record<TopicName, string[]> = {
   Election: [
     "election",
     "elections",
+    "ምርጫ",
+    "ምርጫዎች",
     "nebe",
     "ballot",
     "voter",
@@ -97,8 +124,11 @@ export const TOPIC_KEYWORDS: Record<TopicName, string[]> = {
   ],
   Conflict: [
     "tigray",
+    "ትግራይ",
     "amhara",
+    "አማራ",
     "oromia",
+    "ኦሮሚያ",
     "insurgency",
     "clash",
     "clashes",
@@ -110,7 +140,9 @@ export const TOPIC_KEYWORDS: Record<TopicName, string[]> = {
   ],
   Diplomacy: [
     "eritrea",
+    "ኤርትራ",
     "sudan",
+    "ሱዳን",
     "border",
     "summit",
     "diplomatic",

@@ -110,7 +110,7 @@ export function normalizeTitle(title: string): string {
   return stripHtml(title)
     .toLowerCase()
     .replace(/^news:\s*/i, "")
-    .replace(/\s+-\s+(reuters|addis standard)$/i, "")
+    .replace(/\s+-\s+(addis standard)$/i, "")
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -200,5 +200,49 @@ export function extractEnglishDate(text: string): string | null {
 
   return new Date(
     Date.UTC(Number(yearValue), monthIndex, Number(dayValue)),
+  ).toISOString();
+}
+
+export function extractLeadingDayMonthDate(
+  text: string,
+  referenceIso: string,
+): string | null {
+  const cleaned = stripHtml(text);
+  const match = cleaned.match(
+    /^(\d{1,2})\s+(Jan|January|Feb|February|Mar|March|Apr|April|May|Jun|June|Jul|July|Aug|August|Sep|Sept|September|Oct|October|Nov|November|Dec|December)\b/i,
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const referenceDate = new Date(referenceIso);
+  if (Number.isNaN(referenceDate.getTime())) {
+    return null;
+  }
+
+  const [, dayValue, monthValue] = match;
+  const normalizedMonth = monthValue.toLowerCase();
+  const monthIndex = [
+    ["jan", "january"],
+    ["feb", "february"],
+    ["mar", "march"],
+    ["apr", "april"],
+    ["may"],
+    ["jun", "june"],
+    ["jul", "july"],
+    ["aug", "august"],
+    ["sep", "sept", "september"],
+    ["oct", "october"],
+    ["nov", "november"],
+    ["dec", "december"],
+  ].findIndex((aliases) => aliases.includes(normalizedMonth));
+
+  if (monthIndex === -1) {
+    return null;
+  }
+
+  return new Date(
+    Date.UTC(referenceDate.getUTCFullYear(), monthIndex, Number(dayValue)),
   ).toISOString();
 }

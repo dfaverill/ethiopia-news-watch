@@ -22,6 +22,33 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+function wantsRedirectResponse(request: NextRequest) {
+  return request.nextUrl.searchParams.get("redirect") === "1";
+}
+
+function buildReturnUrl(request: NextRequest) {
+  const fallback = new URL("/", request.nextUrl.origin);
+  const referer = request.headers.get("referer");
+
+  if (!referer) {
+    return fallback;
+  }
+
+  try {
+    const candidate = new URL(referer);
+    return candidate.origin === request.nextUrl.origin ? candidate : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function redirectBack(request: NextRequest) {
+  return NextResponse.redirect(buildReturnUrl(request), {
+    status: 303,
+    headers: buildResponseHeaders(),
+  });
+}
+
 function buildResponseHeaders(extra: Record<string, string> = {}) {
   return {
     "Cache-Control": "private, no-store, max-age=0",
@@ -123,6 +150,10 @@ export async function POST(request: NextRequest) {
   );
 
   if (!isSameOriginMutation(request)) {
+    if (wantsRedirectResponse(request)) {
+      return redirectBack(request);
+    }
+
     return NextResponse.json(
       {
         error: "Cross-origin refresh requests are not allowed.",
@@ -136,6 +167,10 @@ export async function POST(request: NextRequest) {
 
   if (!rateLimit.allowed) {
     const payload = redactDashboardDebug(await getDashboardPayload());
+
+    if (wantsRedirectResponse(request)) {
+      return redirectBack(request);
+    }
 
     return NextResponse.json(
       {
@@ -154,6 +189,10 @@ export async function POST(request: NextRequest) {
 
   if (isForceRefreshCoolingDown(FORCE_REFRESH_COOLDOWN_MS)) {
     const payload = redactDashboardDebug(await getDashboardPayload());
+
+    if (wantsRedirectResponse(request)) {
+      return redirectBack(request);
+    }
 
     return NextResponse.json(
       {
@@ -176,6 +215,10 @@ export async function POST(request: NextRequest) {
   try {
     const payload = redactDashboardDebug(await getDashboardPayload({ force: true }));
 
+    if (wantsRedirectResponse(request)) {
+      return redirectBack(request);
+    }
+
     return NextResponse.json(
       { data: payload },
       {
@@ -183,6 +226,10 @@ export async function POST(request: NextRequest) {
       },
     );
   } catch (error) {
+    if (wantsRedirectResponse(request)) {
+      return redirectBack(request);
+    }
+
     return NextResponse.json(
       { error: buildErrorMessage(error) },
       {

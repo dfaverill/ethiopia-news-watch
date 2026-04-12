@@ -5,6 +5,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 
+import { SourceBadge } from "@/components/source-badge";
 import { StatusPill } from "@/components/status-pill";
 import type { SourceStatusEntry } from "@/lib/dashboard";
 
@@ -45,7 +46,7 @@ export function SourceStatusCard({
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--ink)]">
             <Icon className="h-4 w-4 text-[color:var(--accent)]" />
-            {entry.source}
+            <SourceBadge source={entry.source} size="xs" />
           </div>
           <p className="text-sm leading-6 text-[color:var(--ink-soft)]">
             {entry.note}
