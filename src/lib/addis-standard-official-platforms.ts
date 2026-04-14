@@ -9,6 +9,34 @@ export interface AddisStandardOfficialTelegramChannel {
   previewUrl: string;
 }
 
+export interface AddisStandardOfficialFacebookPage {
+  label: string;
+  language: VariantLanguage;
+  languageLabel: LanguageLabel;
+  profileUrl: string;
+}
+
+export const ADDIS_STANDARD_OFFICIAL_FACEBOOK_PAGES = [
+  {
+    label: "Official Facebook page (English)",
+    language: "english",
+    languageLabel: "English",
+    profileUrl: "https://www.facebook.com/AddisstandardEng",
+  },
+  {
+    label: "Official Facebook page (Amharic)",
+    language: "amharic",
+    languageLabel: "Amharic",
+    profileUrl: "https://www.facebook.com/AddisstandardAmh",
+  },
+  {
+    label: "Official Facebook page (Afaan Oromoo)",
+    language: "oromo",
+    languageLabel: "Afaan Oromoo",
+    profileUrl: "https://www.facebook.com/AddisstandardAO",
+  },
+] satisfies AddisStandardOfficialFacebookPage[];
+
 export const ADDIS_STANDARD_OFFICIAL_TELEGRAM_CHANNELS = [
   {
     label: "Official Telegram channel (English)",

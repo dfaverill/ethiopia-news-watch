@@ -4,7 +4,10 @@ import path from "node:path";
 import { load } from "cheerio";
 
 import type { LanguageLabel, SourceName, WeeklyBrief } from "@/lib/dashboard";
-import { ADDIS_STANDARD_OFFICIAL_TELEGRAM_CHANNELS } from "@/lib/addis-standard-official-platforms";
+import {
+  ADDIS_STANDARD_OFFICIAL_FACEBOOK_PAGES,
+  ADDIS_STANDARD_OFFICIAL_TELEGRAM_CHANNELS,
+} from "@/lib/addis-standard-official-platforms";
 import { fetchText } from "@/lib/news/http";
 import { parseRssFeed } from "@/lib/news/sources/helpers";
 import { stripHtml, truncate } from "@/lib/news/text";
@@ -28,6 +31,12 @@ export interface NotebookLmSocialDraft {
 
 interface TelegramProfileConfig {
   previewUrl: string;
+  label: string;
+  language: LanguageLabel;
+}
+
+interface FacebookProfileConfig {
+  profileUrl: string;
   label: string;
   language: LanguageLabel;
 }
@@ -1038,6 +1047,136 @@ async function collectOfficialInstagramSupplements(
   });
 }
 
+async function collectOfficialFacebookSupplements(
+  brief: WeeklyBrief,
+  profiles: Array<[SourceName, FacebookProfileConfig]>,
+) {
+  if (profiles.length === 0) {
+    return [] as NotebookLmSocialDraft[];
+  }
+
+  const collectorPath = path.join(
+    /* turbopackIgnore: true */ process.cwd(),
+    "scripts",
+    "collect-facebook-posts.mjs",
+  );
+
+  return new Promise<NotebookLmSocialDraft[]>((resolve) => {
+    const child = spawn(process.execPath, [collectorPath], {
+      cwd: /* turbopackIgnore: true */ process.cwd(),
+      env: {
+        ...process.env,
+        FORCE_COLOR: "0",
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    let stdout = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.on("error", () => {
+      resolve(
+        profiles.map(([source, profile]) =>
+          buildSocialFailureDraft(source, profile.label, [profile.profileUrl], null),
+        ),
+      );
+    });
+
+    child.on("close", (code) => {
+      if (code !== 0) {
+        resolve(
+          profiles.map(([source, profile]) =>
+            buildSocialFailureDraft(source, profile.label, [profile.profileUrl], null),
+          ),
+        );
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(stdout) as Array<{
+          source: SourceName;
+          posts: Array<{
+            body: string;
+            externalUrls?: string[];
+            publishedAt: string;
+            url: string;
+          }>;
+        }>;
+
+        resolve(
+          profiles.map(([source, profile]) => {
+            const entry = parsed.find((item) => item.source === source);
+            const items = dedupeSocialItems(
+              (entry?.posts ?? [])
+                .filter((post) => normalizeSocialText(post.body).length > 0)
+                .map((post) => {
+                  const sanitized = sanitizeOfficialSocialItem({
+                    source,
+                    title: normalizeSocialText(post.body),
+                    body: post.body,
+                  });
+
+                  if (!sanitized) {
+                    return null;
+                  }
+
+                  const linkedPublicationUrl =
+                    (post.externalUrls ?? []).find((url) =>
+                      /^https:\/\/addisstandard\.com\/?/i.test(url),
+                    ) ?? null;
+
+                  return {
+                    title: sanitized.title,
+                    url: post.url,
+                    publishedAt: new Date(post.publishedAt).toISOString(),
+                    language: profile.language,
+                    section: "Official social",
+                    body: sanitized.body,
+                    captureNote: linkedPublicationUrl
+                      ? `${profile.label} post linking to the outlet publication at ${linkedPublicationUrl}.`
+                      : `${profile.label} post.`,
+                  } satisfies NotebookLmSocialItem;
+                })
+                .filter((item): item is NotebookLmSocialItem => Boolean(item)),
+            );
+
+            return {
+              source,
+              items,
+              diagnostics: [
+                `${profile.label}: recovered ${items.length} posts from ${profile.profileUrl}.`,
+              ],
+              checkedSurfaces: [profile.profileUrl],
+            } satisfies NotebookLmSocialDraft;
+          }),
+        );
+      } catch (error) {
+        resolve(
+          profiles.map(([source, profile]) =>
+            buildSocialFailureDraft(source, profile.label, [profile.profileUrl], error),
+          ),
+        );
+      }
+    });
+
+    child.stdin.write(
+      JSON.stringify({
+        windowStart: brief.windowStart,
+        windowEnd: brief.windowEnd,
+        accounts: profiles.map(([source, profile]) => ({
+          source,
+          profileUrl: profile.profileUrl,
+        })),
+      }),
+    );
+    child.stdin.end();
+  });
+}
+
 async function collectOfficialXSupplements(
   brief: WeeklyBrief,
   profiles: Array<[SourceName, XProfileConfig]>,
@@ -1163,6 +1302,19 @@ async function collectOfficialXSupplements(
 export async function harvestOfficialSocialSupplements(
   brief: WeeklyBrief,
 ): Promise<NotebookLmSocialDraft[]> {
+  const facebookProfiles = [
+    ...ADDIS_STANDARD_OFFICIAL_FACEBOOK_PAGES.map(
+      (page) =>
+        [
+          "Addis Standard" as const,
+          {
+            profileUrl: page.profileUrl,
+            label: page.label,
+            language: page.languageLabel,
+          } satisfies FacebookProfileConfig,
+        ] satisfies [SourceName, FacebookProfileConfig],
+    ),
+  ];
   const telegramProfiles = [
     ...ADDIS_STANDARD_OFFICIAL_TELEGRAM_CHANNELS.map(
       (channel) =>
@@ -1189,8 +1341,9 @@ export async function harvestOfficialSocialSupplements(
     [SourceName, InstagramProfileConfig]
   >;
 
-  const [telegramDrafts, xDrafts, youtubeDrafts, instagramDrafts] =
+  const [facebookDrafts, telegramDrafts, xDrafts, youtubeDrafts, instagramDrafts] =
     await Promise.all([
+      collectOfficialFacebookSupplements(brief, facebookProfiles),
       collectOfficialTelegramSupplements(brief, telegramProfiles),
       collectOfficialXSupplements(brief, xProfiles),
       collectOfficialYouTubeSupplements(brief, youtubeProfiles),
@@ -1199,6 +1352,7 @@ export async function harvestOfficialSocialSupplements(
   const merged = new Map<SourceName, NotebookLmSocialDraft>();
 
   for (const draft of [
+    ...facebookDrafts,
     ...telegramDrafts,
     ...xDrafts,
     ...youtubeDrafts,

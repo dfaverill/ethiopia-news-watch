@@ -286,7 +286,7 @@ function selectTargetArtifact(cards, previousCards, expectedSourceCount) {
     }
   }
 
-  return candidates[0] || null;
+  return null;
 }
 
 async function ensureNotebookLmSurface(page) {
@@ -1320,13 +1320,17 @@ async function waitForAudioDownload(
     }
 
     const cards = await collectStudioArtifactCards(page);
-    const targetArtifact = selectNewestArtifact(cards);
+    const targetArtifact = selectTargetArtifact(
+      cards,
+      previousArtifacts,
+      expectedSourceCount,
+    );
     const latestAudioMenuButton =
       targetArtifact && Number.isInteger(targetArtifact.domIndex)
         ? page.locator("button.artifact-more-button").nth(targetArtifact.domIndex)
-        : await getStudioButton(page, "More");
+        : null;
 
-    if (latestAudioMenuButton && !generationIndicator) {
+    if (latestAudioMenuButton && !generationIndicator && (observedGeneration || previousArtifacts.length === 0)) {
       await updateState(statePath, {
         status: "running",
         needsSignin: false,

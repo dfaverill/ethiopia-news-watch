@@ -25,6 +25,7 @@ import {
   type NotebookLmWeeklySourceCheck,
   type NotebookLmWeeklyUploadCheck,
 } from "@/lib/notebooklm-source-harvest";
+import { getDashboardPayload } from "@/lib/news/aggregate";
 import { CACHE_TTL_MS } from "@/lib/news/constants";
 import { logNewsEvent } from "@/lib/news/logger";
 import { loadPersistedCoverageState } from "@/lib/news/persistence";
@@ -59,7 +60,7 @@ const NOTEBOOKLM_REUSABLE_NOTEBOOK_PATH = path.join(
 );
 const NOTEBOOKLM_STATE_SCHEMA_VERSION = 1;
 const NOTEBOOKLM_PROVIDER = "google-notebooklm";
-const NOTEBOOKLM_PREPARED_REQUEST_SCHEMA_VERSION = 11;
+const NOTEBOOKLM_PREPARED_REQUEST_SCHEMA_VERSION = 12;
 export const NOTEBOOKLM_NOTEBOOK_TITLE = "Ethiopia News";
 export const NOTEBOOKLM_RECENT_NOTEBOOK_TITLE = NOTEBOOKLM_NOTEBOOK_TITLE;
 const NOTEBOOKLM_LANGUAGE = process.env.NOTEBOOKLM_PODCAST_LANGUAGE || "English";
@@ -304,6 +305,10 @@ export interface NotebookLmPreparedRequest {
   prompt: string;
   sourcePackets: NotebookLmSourcePacket[];
   sourceQuality: NotebookLmSourceQualityReport;
+}
+
+interface BuildPreparedRequestOptions {
+  forceCoverageRefresh?: boolean;
 }
 
 interface StoredPreparedRequest {
@@ -1652,6 +1657,14 @@ function getNotebookLmPlatformPriority(item: NotebookLmPacketItem) {
     return 2;
   }
 
+  if (/facebook\.com/i.test(url)) {
+    return 1.9;
+  }
+
+  if (/t\.me\//i.test(url)) {
+    return 1.8;
+  }
+
   return 1;
 }
 
@@ -1781,11 +1794,19 @@ function buildNotebookLmPlatformSection(
     };
   }
 
+  if (/facebook\.com/i.test(url)) {
+    return {
+      key: "facebook",
+      label: "Official Facebook posts",
+      order: 4,
+    };
+  }
+
   if (/x\.com|twitter\.com/i.test(url)) {
     return {
       key: "x",
       label: "Official X posts",
-      order: 4,
+      order: 5,
     };
   }
 
@@ -1972,7 +1993,12 @@ function buildSourceAuditContent(
 
 export async function buildNotebookLmPreparedRequest(
   scope: NotebookLmPodcastScope,
+  options?: BuildPreparedRequestOptions,
 ): Promise<NotebookLmPreparedRequest | null> {
+  if (options?.forceCoverageRefresh) {
+    await getDashboardPayload({ force: true });
+  }
+
   const persistedCoverage = await loadPersistedCoverageState();
 
   if (!persistedCoverage) {
@@ -2365,7 +2391,7 @@ export async function startNotebookLmPodcastGeneration(options?: {
   const force = options?.force ?? false;
   const scope = options?.scope ?? "weekly";
   const [request, currentState, allStates, reusableNotebook] = await Promise.all([
-    buildNotebookLmPreparedRequest(scope),
+    buildNotebookLmPreparedRequest(scope, { forceCoverageRefresh: true }),
     loadStoredState(scope),
     loadAllStoredStates(),
     loadReusableNotebookRecord(),
@@ -2538,7 +2564,7 @@ export async function startNotebookLmSourceRepair(options?: {
   const force = options?.force ?? false;
   const scope = options?.scope ?? "weekly";
   const [request, currentState, allStates, reusableNotebook] = await Promise.all([
-    buildNotebookLmPreparedRequest(scope),
+    buildNotebookLmPreparedRequest(scope, { forceCoverageRefresh: true }),
     loadStoredState(scope),
     loadAllStoredStates(),
     loadReusableNotebookRecord(),

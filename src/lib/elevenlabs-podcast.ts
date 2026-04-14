@@ -787,7 +787,7 @@ export async function startElevenLabsRecentPodcastGeneration(options?: {
 }) {
   const force = options?.force ?? false;
   const [request, currentState] = await Promise.all([
-    buildNotebookLmPreparedRequest("recent"),
+    buildNotebookLmPreparedRequest("recent", { forceCoverageRefresh: true }),
     loadStoredState(),
   ]);
   const coverage = buildCoverageSummaryFromRequest(request);

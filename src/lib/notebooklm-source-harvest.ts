@@ -55,6 +55,11 @@ const ADDIS_STANDARD_BROWSER_EXTRACTOR_SCRIPT = path.join(
   "scripts",
   "extract-addis-standard-article.mjs",
 );
+const FACEBOOK_POST_EXTRACTOR_SCRIPT = path.join(
+  process.cwd(),
+  "scripts",
+  "extract-facebook-post.mjs",
+);
 const ADDIS_STANDARD_BROWSER_PROFILE_DIRECTORY =
   process.env.ADDIS_STANDARD_BROWSER_PROFILE_DIRECTORY ||
   path.join(process.cwd(), ".cache", "addis-standard-profile");
@@ -146,6 +151,14 @@ interface NotebookLmRecencyVerification {
 
 interface AddisStandardBrowserExtraction {
   body: string;
+  finalUrl: string;
+  publishedAt: string | null;
+  title: string;
+}
+
+interface FacebookPostExtraction {
+  body: string;
+  externalUrls: string[];
   finalUrl: string;
   publishedAt: string | null;
   title: string;
@@ -631,6 +644,20 @@ function findOfficialPublicationUrlInItem(
   return null;
 }
 
+function findLinkedFacebookUrlInItem(item: NotebookLmPacketItem) {
+  const urls = extractUrlsFromText(
+    [item.url ?? "", item.title, item.body, item.captureNote ?? ""].join("\n"),
+  );
+
+  return (
+    urls.find((url) =>
+      /^https:\/\/(?:www\.)?facebook\.com\/(?:share\/|[^/]+\/posts\/|[^/]+\/permalink\.php|\S+)/i.test(
+        url,
+      ),
+    ) ?? null
+  );
+}
+
 function deriveRecoveredPublicationSection(
   source: SourceName,
   linkedUrl: string,
@@ -711,6 +738,87 @@ async function extractAddisStandardArticleWithBrowser(url: string) {
   });
 }
 
+const facebookPostExtractionCache = new Map<
+  string,
+  Promise<FacebookPostExtraction | null>
+>();
+
+async function extractFacebookPostWithBrowser(url: string) {
+  const cacheKey = normalizeCandidateUrl(url);
+  const cached = facebookPostExtractionCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const extractionPromise = (async () => {
+    if (!existsSync(FACEBOOK_POST_EXTRACTOR_SCRIPT)) {
+      return null;
+    }
+
+    return new Promise<FacebookPostExtraction | null>((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [FACEBOOK_POST_EXTRACTOR_SCRIPT, cacheKey],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            ADDIS_STANDARD_BROWSER_PROFILE_DIRECTORY,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+        },
+      );
+      let stdout = "";
+      let stderr = "";
+
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code !== 0) {
+          reject(
+            new Error(
+              stderr.trim() ||
+                `Facebook post extractor exited with code ${code}.`,
+            ),
+          );
+          return;
+        }
+
+        const trimmed = stdout.trim();
+        if (!trimmed) {
+          resolve(null);
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(trimmed) as FacebookPostExtraction);
+        } catch (error) {
+          reject(
+            error instanceof Error
+              ? error
+              : new Error("Failed to parse Facebook post extractor output."),
+          );
+        }
+      });
+    });
+  })();
+
+  facebookPostExtractionCache.set(cacheKey, extractionPromise);
+
+  try {
+    return await extractionPromise;
+  } catch (error) {
+    facebookPostExtractionCache.delete(cacheKey);
+    throw error;
+  }
+}
+
 async function translatePacketItemIfNeeded(
   source: SourceName,
   item: NotebookLmPacketItem,
@@ -758,9 +866,6 @@ async function recoverOfficialPublicationFromSocialItem(args: {
   }
 
   const linkedUrl = findOfficialPublicationUrlInItem(args.source, args.item);
-  if (!linkedUrl) {
-    return null;
-  }
 
   const buildRecoveredItem = async (recovered: {
     body: string;
@@ -809,66 +914,125 @@ async function recoverOfficialPublicationFromSocialItem(args: {
     } satisfies NotebookLmPacketItem;
   };
 
-  try {
-    const html = await fetchText(linkedUrl, {
-      retries: 0,
-      timeoutMs: 15_000,
-    });
-    const paragraphs =
-      args.source === "ENA"
-        ? extractEnaArticle(html)
-        : args.source === "NEBE"
-          ? extractNebeArticle(html)
-          : args.source === "Addis Standard"
-            ? extractParagraphs(html, [
-                "article .entry-content p",
-                "article p",
-                ".entry-content p",
-              ])
-            : [];
-    const extractedBody = buildPublicationBody(args.source, paragraphs, "");
-
-    if (extractedBody.length >= 180) {
-      const $ = load(html);
-      const htmlPublishedAt = extractHtmlPublishedAtCandidates(html).find((value) =>
-        isWithinWindow(value, args.brief),
-      );
-      const resolvedTitle =
-        $('meta[property="og:title"]').attr("content") ||
-        $("h1").first().text().trim() ||
-        $("title").text().trim() ||
-        args.item.title;
-
-      return buildRecoveredItem({
-        body: extractedBody,
-        html,
-        publishedAt: htmlPublishedAt ?? args.item.publishedAt,
-        title: resolvedTitle,
-        url: linkedUrl,
-      });
-    }
-  } catch {
-    // Fall through to the browser recovery path for sources that block raw fetches.
-  }
-
-  if (
-    args.source === "Addis Standard" &&
-    /^https:\/\/addisstandard\.com\/?/i.test(linkedUrl)
-  ) {
+  if (linkedUrl) {
     try {
-      const browserExtraction = await extractAddisStandardArticleWithBrowser(linkedUrl);
-      if (!browserExtraction || browserExtraction.body.trim().length < 180) {
+      const html = await fetchText(linkedUrl, {
+        retries: 0,
+        timeoutMs: 15_000,
+      });
+      const paragraphs =
+        args.source === "ENA"
+          ? extractEnaArticle(html)
+          : args.source === "NEBE"
+            ? extractNebeArticle(html)
+            : args.source === "Addis Standard"
+              ? extractParagraphs(html, [
+                  "article .entry-content p",
+                  "article p",
+                  ".entry-content p",
+                ])
+              : [];
+      const extractedBody = buildPublicationBody(args.source, paragraphs, "");
+
+      if (extractedBody.length >= 180) {
+        const $ = load(html);
+        const htmlPublishedAt = extractHtmlPublishedAtCandidates(html).find((value) =>
+          isWithinWindow(value, args.brief),
+        );
+        const resolvedTitle =
+          $('meta[property="og:title"]').attr("content") ||
+          $("h1").first().text().trim() ||
+          $("title").text().trim() ||
+          args.item.title;
+
+        return buildRecoveredItem({
+          body: extractedBody,
+          html,
+          publishedAt: htmlPublishedAt ?? args.item.publishedAt,
+          title: resolvedTitle,
+          url: linkedUrl,
+        });
+      }
+    } catch {
+      // Fall through to the browser recovery path for sources that block raw fetches.
+    }
+
+    if (
+      args.source === "Addis Standard" &&
+      /^https:\/\/addisstandard\.com\/?/i.test(linkedUrl)
+    ) {
+      try {
+        const browserExtraction = await extractAddisStandardArticleWithBrowser(linkedUrl);
+        if (!browserExtraction || browserExtraction.body.trim().length < 180) {
+          return null;
+        }
+
+        return buildRecoveredItem({
+          body: browserExtraction.body,
+          publishedAt: browserExtraction.publishedAt ?? args.item.publishedAt,
+          title: browserExtraction.title || args.item.title,
+          url: browserExtraction.finalUrl || linkedUrl,
+        });
+      } catch {
         return null;
       }
+    }
+  }
 
-      return buildRecoveredItem({
-        body: browserExtraction.body,
-        publishedAt: browserExtraction.publishedAt ?? args.item.publishedAt,
-        title: browserExtraction.title || args.item.title,
-        url: browserExtraction.finalUrl || linkedUrl,
-      });
-    } catch {
-      return null;
+  if (args.source === "Addis Standard") {
+    const linkedFacebookUrl = findLinkedFacebookUrlInItem(args.item);
+
+    if (linkedFacebookUrl) {
+      try {
+        const facebookExtraction = await extractFacebookPostWithBrowser(
+          linkedFacebookUrl,
+        );
+        if (facebookExtraction && facebookExtraction.body.trim().length >= 120) {
+          const linkedOfficialUrl =
+            facebookExtraction.externalUrls.find((url) =>
+              /^https:\/\/addisstandard\.com\/?/i.test(url),
+            ) ?? null;
+
+          if (linkedOfficialUrl) {
+            return recoverOfficialPublicationFromSocialItem({
+              ...args,
+              item: {
+                ...args.item,
+                url: facebookExtraction.finalUrl || linkedFacebookUrl,
+                title: facebookExtraction.title || args.item.title,
+                body: facebookExtraction.body,
+                captureNote: [
+                  "Recovered the linked official Facebook post shared by Addis Standard.",
+                  linkedOfficialUrl,
+                ]
+                  .filter(Boolean)
+                  .join(" "),
+              },
+            });
+          }
+
+          const translatedFacebook = await translatePacketItemIfNeeded(
+            args.source,
+            {
+              ...args.item,
+              title: facebookExtraction.title || args.item.title,
+              url: facebookExtraction.finalUrl || linkedFacebookUrl,
+              publishedAt:
+                facebookExtraction.publishedAt ?? args.item.publishedAt,
+              body: facebookExtraction.body,
+              captureKind: "social-post",
+              captureNote:
+                "Recovered the linked official Facebook post shared by Addis Standard.",
+            },
+          );
+
+          if (translatedFacebook.body.trim().length > 0) {
+            return translatedFacebook;
+          }
+        }
+      } catch {
+        return null;
+      }
     }
   }
 
