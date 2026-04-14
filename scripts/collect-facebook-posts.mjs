@@ -1,4 +1,8 @@
 import { launchAutomationBrowser } from "./lib/automation-browser.mjs";
+import {
+  isAutomationWorkerEnabled,
+  runAutomationWorkerTask,
+} from "./lib/automation-worker-client.mjs";
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -64,6 +68,15 @@ const parsed = input ? JSON.parse(input) : {};
 const accounts = Array.isArray(parsed.accounts) ? parsed.accounts : [];
 const windowStart = new Date(parsed.windowStart || "").getTime();
 const windowEnd = new Date(parsed.windowEnd || "").getTime();
+
+if (isAutomationWorkerEnabled()) {
+  const remoteResult = await runAutomationWorkerTask(
+    "collect-facebook-posts",
+    parsed,
+  );
+  process.stdout.write(JSON.stringify(Array.isArray(remoteResult) ? remoteResult : []));
+  process.exit(0);
+}
 
 if (accounts.length === 0 || !Number.isFinite(windowStart) || !Number.isFinite(windowEnd)) {
   process.stdout.write("[]");

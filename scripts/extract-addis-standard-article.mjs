@@ -1,12 +1,25 @@
 import path from "node:path";
 
 import { launchAutomationBrowser } from "./lib/automation-browser.mjs";
+import {
+  isAutomationWorkerEnabled,
+  runAutomationWorkerTask,
+} from "./lib/automation-worker-client.mjs";
 
 const url = process.argv[2];
 
 if (!url) {
   console.error("Missing Addis Standard article URL.");
   process.exit(1);
+}
+
+if (isAutomationWorkerEnabled()) {
+  const remoteResult = await runAutomationWorkerTask(
+    "extract-addis-standard-article",
+    { url },
+  );
+  process.stdout.write(remoteResult ? JSON.stringify(remoteResult) : "");
+  process.exit(0);
 }
 
 const profileDir =

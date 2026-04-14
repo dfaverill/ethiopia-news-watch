@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "node scripts/start-next.mjs",
+    "worker": "node scripts/automation-worker-server.mjs",
     "lint": "eslint",
     "test": "vitest run"
   },

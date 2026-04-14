@@ -1,4 +1,8 @@
 import { launchAutomationBrowser } from "./lib/automation-browser.mjs";
+import {
+  isAutomationWorkerEnabled,
+  runAutomationWorkerTask,
+} from "./lib/automation-worker-client.mjs";
 
 function normalize(value) {
   return String(value || "")
@@ -57,6 +61,14 @@ const targetUrl = process.argv[2];
 
 if (!targetUrl) {
   process.stdout.write("");
+  process.exit(0);
+}
+
+if (isAutomationWorkerEnabled()) {
+  const remoteResult = await runAutomationWorkerTask("extract-facebook-post", {
+    url: targetUrl,
+  });
+  process.stdout.write(remoteResult ? JSON.stringify(remoteResult) : "");
   process.exit(0);
 }
 

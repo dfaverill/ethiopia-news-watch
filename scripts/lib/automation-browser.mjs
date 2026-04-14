@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import StreamZip from "node-stream-zip";
+import { EnvHttpProxyAgent } from "undici";
 import { chromium } from "playwright";
 
 const BROWSERBASE_API_BASE_URL =
@@ -12,6 +13,12 @@ const DEFAULT_CONTEXT_CACHE_PATH = path.join(
   ".cache",
   "browserbase-contexts.json",
 );
+const hasProxyEnvironment =
+  Boolean(process.env.HTTPS_PROXY || process.env.https_proxy) &&
+  !process.env.NODE_USE_ENV_PROXY;
+const browserbaseProxyDispatcher = hasProxyEnvironment
+  ? new EnvHttpProxyAgent()
+  : null;
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -80,6 +87,11 @@ async function browserbaseRequest(pathname, init = {}) {
 
   const response = await fetch(`${BROWSERBASE_API_BASE_URL}${pathname}`, {
     ...init,
+    ...(browserbaseProxyDispatcher
+      ? {
+          dispatcher: browserbaseProxyDispatcher,
+        }
+      : {}),
     headers: {
       "content-type": "application/json",
       "x-bb-api-key": apiKey,
