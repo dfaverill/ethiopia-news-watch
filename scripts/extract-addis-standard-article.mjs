@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { chromium } from "playwright";
+import { launchAutomationBrowser } from "./lib/automation-browser.mjs";
 
 const url = process.argv[2];
 
@@ -12,7 +12,7 @@ if (!url) {
 const profileDir =
   process.env.ADDIS_STANDARD_BROWSER_PROFILE_DIRECTORY ||
   path.join(process.cwd(), ".cache", "addis-standard-profile");
-const browserChannel = process.env.ADDIS_STANDARD_BROWSER_CHANNEL || "msedge";
+const browserChannel = process.env.ADDIS_STANDARD_BROWSER_CHANNEL || "chromium";
 const waitMs = Number(process.env.ADDIS_STANDARD_BROWSER_WAIT_MS || "30000");
 const navigationTimeoutMs = Number(
   process.env.ADDIS_STANDARD_BROWSER_TIMEOUT_MS || "60000",
@@ -158,17 +158,18 @@ async function warmAddisSession(page, targetUrl) {
   });
 }
 
-let context;
+let browserSession;
 
 try {
-  context = await chromium.launchPersistentContext(profileDir, {
-    channel: browserChannel,
-    // Keep Addis Standard extraction invisible unless debugging is requested.
+  browserSession = await launchAutomationBrowser({
+    browserChannel,
+    contextKey: "addis-standard",
     headless,
+    launchArgs: ["--disable-blink-features=AutomationControlled"],
+    persistentProfileDir: profileDir,
     viewport: { width: 1280, height: 900 },
-    args: ["--disable-blink-features=AutomationControlled"],
   });
-  const page = context.pages()[0] || (await context.newPage());
+  const page = browserSession.page;
   await page.goto(url, {
     waitUntil: "domcontentloaded",
     timeout: navigationTimeoutMs,
@@ -208,7 +209,7 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 } finally {
-  if (context) {
-    await context.close();
+  if (browserSession) {
+    await browserSession.close();
   }
 }

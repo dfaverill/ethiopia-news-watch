@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { launchAutomationBrowser } from "./lib/automation-browser.mjs";
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -24,16 +24,19 @@ if (accounts.length === 0 || !Number.isFinite(windowStart) || !Number.isFinite(w
   process.exit(0);
 }
 
-const browser = await chromium.launch({
-  channel: process.env.NOTEBOOKLM_BROWSER_CHANNEL || "msedge",
+const browserSession = await launchAutomationBrowser({
+  browserChannel: process.env.NOTEBOOKLM_BROWSER_CHANNEL || "chromium",
+  contextKey: "x-public",
   headless: true,
+  viewport: { width: 1440, height: 2200 },
 });
 
 try {
   const results = [];
 
   for (const account of accounts) {
-    const page = await browser.newPage();
+    const page = await browserSession.context.newPage();
+    await page.setViewportSize({ width: 1440, height: 2200 }).catch(() => undefined);
 
     try {
       await page.goto(account.profileUrl, {
@@ -110,5 +113,5 @@ try {
 
   process.stdout.write(JSON.stringify(results));
 } finally {
-  await browser.close();
+  await browserSession.close();
 }

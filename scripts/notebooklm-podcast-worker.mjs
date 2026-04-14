@@ -1,7 +1,12 @@
-import { chromium } from "playwright";
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
+
+import {
+  downloadBrowserbaseSessionArchive,
+  extractBrowserbaseDownloads,
+  launchAutomationBrowser,
+} from "./lib/automation-browser.mjs";
 
 const NOTEBOOKLM_URL = "https://notebooklm.google.com/";
 const SIGN_IN_TIMEOUT_MS = 15 * 60 * 1000;
@@ -299,7 +304,7 @@ async function ensureNotebookLmSurface(page) {
   );
 }
 
-async function waitForNotebookLmSignIn(page, statePath, debugDir) {
+async function waitForNotebookLmSignIn(page, statePath, debugDir, inspectorUrl = null) {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < SIGN_IN_TIMEOUT_MS) {
@@ -330,7 +335,9 @@ async function waitForNotebookLmSignIn(page, statePath, debugDir) {
       status: "auth-required",
       needsSignin: true,
       message:
-        "Sign in to NotebookLM in the opened browser window to continue the Ethiopia News Watch podcast generation.",
+        inspectorUrl
+          ? `Sign in to NotebookLM in Browserbase Live View to continue the Ethiopia News Watch podcast generation: ${inspectorUrl}`
+          : "Sign in to NotebookLM in the opened browser window to continue the Ethiopia News Watch podcast generation.",
       error: null,
     });
 
@@ -1301,6 +1308,7 @@ async function waitForAudioDownload(
   job,
   statePath,
   debugDir,
+  browserSession,
   previousArtifacts = [],
 ) {
   const startedAt = Date.now();
@@ -1342,7 +1350,28 @@ async function waitForAudioDownload(
 
       if (download) {
         await mkdir(path.dirname(job.outputAudioPath), { recursive: true });
-        await download.saveAs(job.outputAudioPath);
+        if (browserSession?.usingManagedBrowser && browserSession.session?.id) {
+          await downloadBrowserbaseSessionArchive(browserSession.session.id);
+          const extractedDownloads = await extractBrowserbaseDownloads(
+            browserSession.session.id,
+            path.dirname(job.outputAudioPath),
+          );
+          const downloadedAudioPath =
+            extractedDownloads.find((candidate) => /\.m4a$/i.test(candidate)) ??
+            extractedDownloads[0];
+
+          if (!downloadedAudioPath || !existsSync(downloadedAudioPath)) {
+            throw new Error(
+              "Browserbase reported a completed download, but no synced audio file was available.",
+            );
+          }
+
+          if (downloadedAudioPath !== job.outputAudioPath) {
+            await rename(downloadedAudioPath, job.outputAudioPath);
+          }
+        } else {
+          await download.saveAs(job.outputAudioPath);
+        }
         const audioStats = await stat(job.outputAudioPath);
         const proofPayload = {
           generatedAt: new Date().toISOString(),
@@ -1395,16 +1424,18 @@ async function main() {
   await mkdir(userDataDir, { recursive: true });
   await mkdir(job.debugDir, { recursive: true });
 
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    channel: job.browserChannel || undefined,
-    headless: Boolean(job.browserHeadless),
+  const browserSession = await launchAutomationBrowser({
     acceptDownloads: true,
+    browserChannel: job.browserChannel || "chromium",
+    contextKey: "notebooklm",
+    headless: Boolean(job.browserHeadless),
+    persistentProfileDir: userDataDir,
     viewport: {
       width: 1600,
       height: 900,
     },
   });
-  const page = context.pages()[0] ?? (await context.newPage());
+  const page = browserSession.page;
 
   try {
     await updateState(job.statePath, {
@@ -1420,7 +1451,12 @@ async function main() {
     });
 
     await ensureNotebookLmSurface(page);
-    await waitForNotebookLmSignIn(page, job.statePath, job.debugDir);
+    await waitForNotebookLmSignIn(
+      page,
+      job.statePath,
+      job.debugDir,
+      browserSession.session?.inspectorUrl || null,
+    );
     await openNotebook(job, page, job.statePath, job.debugDir);
 
     if (job.operation !== "generate-audio") {
@@ -1448,6 +1484,7 @@ async function main() {
       job,
       job.statePath,
       job.debugDir,
+      browserSession,
       previousArtifacts,
     );
 
@@ -1480,7 +1517,7 @@ async function main() {
     });
     throw error;
   } finally {
-    await context.close().catch(() => undefined);
+    await browserSession.close().catch(() => undefined);
   }
 }
 

@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { launchAutomationBrowser } from "./lib/automation-browser.mjs";
 
 function normalize(value) {
   return String(value || "")
@@ -60,17 +60,16 @@ if (!targetUrl) {
   process.exit(0);
 }
 
-const browser = await chromium.launch({
-  channel: process.env.NOTEBOOKLM_BROWSER_CHANNEL || "msedge",
+const browserSession = await launchAutomationBrowser({
+  browserChannel: process.env.NOTEBOOKLM_BROWSER_CHANNEL || "chromium",
+  contextKey: "facebook-public",
   headless: true,
+  viewport: { width: 1440, height: 2200 },
 });
 
 try {
-  const page = await browser.newPage({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-    viewport: { width: 1440, height: 2200 },
-  });
+  const page = await browserSession.context.newPage();
+  await page.setViewportSize({ width: 1440, height: 2200 }).catch(() => undefined);
 
   await page.goto(targetUrl, {
     waitUntil: "domcontentloaded",
@@ -160,5 +159,5 @@ try {
   process.stdout.write(JSON.stringify(result));
   await page.close();
 } finally {
-  await browser.close();
+  await browserSession.close();
 }

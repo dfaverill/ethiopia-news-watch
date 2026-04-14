@@ -251,6 +251,12 @@ Default local URL:
 
 - [http://localhost:3000](http://localhost:3000)
 
+## Codex Cloud Browser Automation
+
+The Playwright-driven NotebookLM and social scraping flows can now run against a Browserbase-managed cloud browser instead of a local Edge profile when `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID` are configured.
+
+Setup details and the Codex web bootstrap prompt live in [docs/codex-cloud-browserbase.md](D:/Ethiopia/News%20app/ethiopia-news-app-task-2/docs/codex-cloud-browserbase.md).
+
 ## Render Deployment
 
 The canonical deployment definition for this repo is [render.yaml](D:/Ethiopia/News%20app/ethiopia-news-app/render.yaml). Prefer deploying it as a Render Blueprint so the service shape, region, instance count, disk, health check, and cache-directory environment variable all come from the repo.

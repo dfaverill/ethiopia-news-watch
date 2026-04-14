@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { launchAutomationBrowser } from "./lib/automation-browser.mjs";
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -22,13 +22,14 @@ if (urls.length === 0) {
   process.exit(0);
 }
 
-const browser = await chromium.launch({
-  channel: process.env.NOTEBOOKLM_BROWSER_CHANNEL || "msedge",
+const browserSession = await launchAutomationBrowser({
+  browserChannel: process.env.NOTEBOOKLM_BROWSER_CHANNEL || "chromium",
+  contextKey: "google-news",
   headless: true,
 });
 
 try {
-  const page = await browser.newPage();
+  const page = await browserSession.context.newPage();
   const resolved = [];
 
   for (const sourceUrl of urls) {
@@ -53,5 +54,5 @@ try {
 
   process.stdout.write(JSON.stringify(resolved));
 } finally {
-  await browser.close();
+  await browserSession.close();
 }
