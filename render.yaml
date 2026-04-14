@@ -16,3 +16,25 @@ services:
       name: news-watch-cache
       mountPath: /var/data
       sizeGB: 5
+
+  - type: web
+    name: ethiopia-news-watch-automation-worker
+    runtime: node
+    region: oregon
+    plan: starter
+    numInstances: 1
+    autoDeployTrigger: commit
+    buildCommand: npm ci
+    startCommand: npm run worker
+    healthCheckPath: /ready
+    envVars:
+      - key: AUTOMATION_WORKER_TOKEN
+        sync: false
+      - key: BROWSERBASE_API_KEY
+        sync: false
+      - key: BROWSERBASE_PROJECT_ID
+        sync: false
+      - key: BROWSERBASE_KEEP_ALIVE
+        value: "1"
+      - key: NOTEBOOKLM_BROWSER_CHANNEL
+        value: chromium

@@ -73,6 +73,70 @@ BROWSERBASE_CONTEXT_CACHE_PATH=/workspace/ethiopia-news-watch/.cache/browserbase
 
 Do not copy your old Windows-only browser profile paths into Codex cloud.
 
+## Worker-backed mode (for runtimes that cannot attach CDP directly)
+
+If your Codex runtime can call HTTPS APIs but cannot open outbound Browserbase CDP websockets,
+set:
+
+```text
+AUTOMATION_WORKER_URL=https://<your-worker-host>
+AUTOMATION_WORKER_TOKEN=...
+AUTOMATION_WORKER_TIMEOUT_MS=120000
+```
+
+When `AUTOMATION_WORKER_URL` is set, these scripts delegate to the worker instead of running
+Playwright locally:
+
+- `scripts/collect-facebook-posts.mjs`
+- `scripts/extract-facebook-post.mjs`
+- `scripts/collect-x-posts.mjs`
+- `scripts/extract-addis-standard-article.mjs`
+
+The worker is expected to expose:
+
+- `POST /tasks/collect-facebook-posts`
+- `POST /tasks/extract-facebook-post`
+- `POST /tasks/collect-x-posts`
+- `POST /tasks/extract-addis-standard-article`
+- `GET /health` (liveness)
+- `GET /ready` (readiness: validates required env)
+
+Each endpoint should accept the script input payload and return JSON (or `{ "result": ... }`).
+
+Run the worker locally:
+
+```bash
+npm run worker
+```
+
+For local-only testing without auth, set:
+
+```text
+AUTOMATION_WORKER_ALLOW_NO_TOKEN=1
+```
+
+Minimal deployment notes:
+
+- Deploy `scripts/automation-worker-server.mjs` in a runtime that can reach Browserbase CDP websocket hosts.
+- Set `AUTOMATION_WORKER_TOKEN` and send it as `Authorization: Bearer <token>` from callers.
+- Keep `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` configured on the worker runtime.
+
+### Smallest Render deployment path
+
+This repo now includes a second Render web service blueprint:
+
+- `ethiopia-news-watch-automation-worker`
+- build: `npm ci`
+- start: `npm run worker`
+- health: `GET /ready`
+
+After provisioning the worker service, set on your app runtime:
+
+```text
+AUTOMATION_WORKER_URL=https://ethiopia-news-watch-automation-worker.onrender.com
+AUTOMATION_WORKER_TOKEN=<same token configured on worker>
+```
+
 ## Browserbase Login Flow
 
 1. Start a NotebookLM or Facebook task from Codex web.
